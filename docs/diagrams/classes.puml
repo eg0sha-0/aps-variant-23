@@ -1,0 +1,253 @@
+@startuml
+skinparam backgroundColor white
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam shadowing false
+skinparam ArrowColor #334155
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 95
+skinparam ParticipantBackgroundColor #E8F0FE
+skinparam ParticipantBorderColor #475569
+skinparam ClassBackgroundColor #EFF6FF
+skinparam ClassBorderColor #475569
+skinparam activityBackgroundColor #EFF6FF
+skinparam activityBorderColor #475569
+title Вариант 23 — классы модели и интерфейсы взаимодействия
+left to right direction
+hide empty members
+class Simulation {
+ -config: SimulationConfig
+ -now: float
+ -sources: List<Source>
+ -buffer: Buffer
+ -pool: PrinterPool
+ -calendar: EventCalendar
+ -admission: AdmissionDispatcher
+ -selection: SelectionDispatcher
+ -batches: BatchManager
+ -statistics: Statistics
+ -stepView: StepView
+ -summaryView: SummaryView
+ +initialize(): void
+ +step(): StateSnapshot
+ +run(): Summary
+ -handleArrival(event: Event): void
+ -handleCompletion(event: Event): void
+ +snapshot(): StateSnapshot
+}
+class SimulationConfig {
+ +sourceRates: List<float>
+ +serviceBounds: List<(float,float)>
+ +bufferCapacity: int
+ +arrivalHorizon: float
+ +seed: int
+ +validate(): void
+}
+class Source {
+ -id: int
+ -lambda: float
+ -serial: int
+ -nextArrivalAt: float?
+ -rng: RandomGenerator
+ +generate(t: float): PrintJob
+ +nextArrival(t: float, H: float): Event?
+}
+class PrintJob {
+ +id: JobId {readOnly}
+ +sourceId: int {readOnly}
+ +arrivalTime: float {readOnly}
+ -state: JobState
+ -batchId: int?
+ -printerId: int?
+ -startedAt: float?
+ -completedAt: float?
+ +markWaiting(): void
+ +reject(): void
+ +start(t: float, printerId: int, batchId: int): void
+ +complete(t: float): void
+ +waitingTime(): float?
+ +serviceTime(): float?
+ +systemTime(): float?
+}
+enum JobState {
+ CREATED
+ WAITING
+ PRINTING
+ COMPLETED
+ REJECTED
+}
+class Buffer {
+ -capacity: int
+ -queue: List<PrintJob>
+ +isFull(): bool
+ +append(job: PrintJob): void
+ +removeById(id: JobId): PrintJob
+ +snapshotHighestPriority(): List<JobId>
+ +snapshot(): List<PrintJob>
+}
+class AdmissionDispatcher {
+ -buffer: Buffer
+ -statistics: Statistics
+ +admit(job: PrintJob, t: float): AdmissionResult
+}
+enum AdmissionResult {
+ ACCEPTED
+ REJECTED
+}
+class SelectionDispatcher {
+ -buffer: Buffer
+ -pool: PrinterPool
+ -batches: BatchManager
+ -calendar: EventCalendar
+ -statistics: Statistics
+ +dispatch(t: float): void
+}
+class BatchManager {
+ -buffer: Buffer
+ -active: Batch?
+ -nextBatchId: int
+ +ensureActive(t: float): Batch?
+ +nextPendingId(): JobId?
+ +onAssigned(id: JobId): void
+ +onCompleted(id: JobId): void
+ +snapshot(): Batch?
+}
+class Batch {
+ +id: int {readOnly}
+ +sourceId: int {readOnly}
+ +formedAt: float {readOnly}
+ -memberIds: List<JobId> {readOnly}
+ -pendingIds: List<JobId>
+ -inFlightIds: Set<JobId>
+ +nextPendingId(): JobId?
+ +onAssigned(id: JobId): void
+ +onCompleted(id: JobId): void
+ +isComplete(): bool
+}
+class PrinterPool {
+ -printers: List<Printer>
+ +findFreeByNumber(): Printer?
+ +get(id: int): Printer
+ +snapshot(): List<PrinterState>
+}
+class Printer {
+ -id: int
+ -a: float
+ -b: float
+ -rng: RandomGenerator
+ -currentJob: PrintJob?
+ -completionTime: float?
+ +isFree(): bool
+ +start(job: PrintJob, t: float, batchId: int): Event
+ +complete(t: float): PrintJob
+}
+class EventCalendar {
+ -events: PriorityQueue<Event>
+ -nextSequence: int
+ +schedule(event: Event): void
+ +popNext(): Event
+ +isEmpty(): bool
+ +snapshot(): List<Event>
+}
+class Event {
+ +time: float
+ +kind: EventKind
+ +sourceId: int?
+ +printerId: int?
+ +jobId: JobId?
+ +sequence: int
+ +orderKey(): (float,int,int)
+}
+enum EventKind {
+ SERVICE_COMPLETED
+ ARRIVAL
+}
+class Statistics {
+ -bySource: Map<int,SourceCounters>
+ -busyTimes: Map<int,float>
+ +onGenerated(job: PrintJob): void
+ +onRejected(job: PrintJob): void
+ +onStarted(job: PrintJob): void
+ +onCompleted(job: PrintJob): void
+ +summary(T: float): Summary
+}
+class RandomGenerator {
+ -seed: int
+ +exponential(lambda: float): float
+ +uniform(a: float, b: float): float
+}
+class StepView {
+ +show(state: StateSnapshot): void
+}
+class SummaryView {
+ +show(summary: Summary): void
+}
+class StateSnapshot <<DTO>> {
+ +time: float
+ +sources: List<SourceState>
+ +queue: List<JobStateInfo>
+ +activeBatch: BatchState?
+ +printers: List<PrinterState>
+ +calendar: List<Event>
+ +eventLog: List<ActionRecord>
+ +rejectionRates: Map<int,float?>
+}
+class Summary <<DTO>> {
+ +sourceRows: List<SourceSummary>
+ +systemRow: SystemSummary
+ +printerUtilization: Map<int,float>
+ +observationTime: float
+}
+Simulation *-- SimulationConfig
+Simulation *-- Source
+Simulation *-- AdmissionDispatcher
+Simulation *-- SelectionDispatcher
+Simulation *-- StepView
+Simulation *-- SummaryView
+Simulation ..> StateSnapshot : creates
+Source --> RandomGenerator : rng
+Source ..> PrintJob : generates
+Source ..> Event : nextArrival
+Buffer o-- "0..N" PrintJob : queue
+AdmissionDispatcher --> Buffer : buffer
+AdmissionDispatcher --> Statistics : statistics
+AdmissionDispatcher ..> AdmissionResult
+SelectionDispatcher --> Buffer : buffer
+SelectionDispatcher --> PrinterPool : pool
+SelectionDispatcher --> BatchManager : batches
+SelectionDispatcher --> EventCalendar : calendar
+SelectionDispatcher --> Statistics : statistics
+BatchManager --> Buffer : buffer
+BatchManager *-- "0..1" Batch : active
+Batch ..> PrintJob : fixed memberIds
+PrinterPool *-- "1..m" Printer : printers
+Printer --> "0..1" PrintJob : currentJob
+Printer --> RandomGenerator : rng
+Printer ..> Event : completion
+EventCalendar *-- "0..*" Event : events
+Event --> EventKind
+PrintJob --> JobState
+Statistics ..> PrintJob
+Statistics ..> Summary : creates
+StepView ..> StateSnapshot
+SummaryView ..> Summary
+note bottom of Buffer
+Д1ОЗ2: append в конец;
+removeById сдвигает очередь.
+snapshotHighestPriority возвращает
+ID источника с min sourceId в FIFO.
+end note
+note bottom of Batch
+Д2Б5: memberIds неизменяемы.
+isComplete: pending и inFlight пусты.
+Новые поступления пакет не расширяют.
+end note
+note bottom of AdmissionDispatcher: Д1ОО5: отказ новой, без вытеснения.\nНет ссылки на PrinterPool.
+note bottom of PrinterPool: Д2П1: поиск от № 1 без указателя.
+note bottom of EventCalendar: При равном time завершение раньше поступления;\nзатем sequence. Обработка события атомарна.
+note bottom of StateSnapshot
+JobId=(sourceId,serial). DTO и типы строк — значения,
+не самостоятельные активные компоненты СМО.
+ОД2: схема и состояния + календарь по памятке.
+end note
+@enduml

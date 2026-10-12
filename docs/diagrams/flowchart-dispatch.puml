@@ -1,0 +1,75 @@
+@startuml
+skinparam backgroundColor white
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam shadowing false
+skinparam ArrowColor #334155
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 95
+skinparam ParticipantBackgroundColor #E8F0FE
+skinparam ParticipantBorderColor #475569
+skinparam ClassBackgroundColor #EFF6FF
+skinparam ClassBorderColor #475569
+skinparam activityBackgroundColor #EFF6FF
+skinparam activityBorderColor #475569
+title Вариант 23 — подробный алгоритм выбора с дорожками
+|Диспетчер выбора|
+start
+  |Диспетчер выбора|
+  :dispatch(now), continueDispatch=true;
+  while (continueDispatch?) is (да)
+   |Принтеры|
+   :Д2П1: findFreeByNumber(),
+   поиск всегда от № 1;
+   if (Свободный принтер найден?) then (да)
+    |Пакеты|
+    if (Есть активный пакет?) then (да)
+     :Сохранить неизменные memberIds;
+    else (нет)
+     |Буфер|
+     :snapshotHighestPriority();
+     if (Буфер непуст?) then (да)
+      |Пакеты|
+      :Д2Б5: выбрать min sourceId,
+      зафиксировать текущие ID в FIFO,
+      pending=memberIds, inFlight=∅;
+     else (нет)
+      |Диспетчер выбора|
+      :continueDispatch=false;
+     endif
+    endif
+    |Диспетчер выбора|
+    if (continueDispatch?) then (да)
+     |Пакеты|
+     :nextPendingId();
+     if (Ожидающий ID найден?) then (да)
+      |Буфер|
+      :removeById(id),
+      сдвинуть следующие элементы;
+      |Принтеры|
+      :start(job,now,batchId),
+      ПЗ2: τ~U(aⱼ,bⱼ), job=PRINTING;
+      |Пакеты|
+      :onAssigned(id): pending → inFlight;
+      |Статистика и отображение|
+      :onStarted(job): учесть ожидание;
+      |Модель и календарь|
+      :schedule(SERVICE_COMPLETED,now+τ);
+     else (нет, пакет ещё печатается)
+      |Диспетчер выбора|
+      :Свободный принтер ждёт конца пакета,
+      continueDispatch=false;
+     endif
+    else (нет)
+     :Закончить выбор: буфер пуст;
+    endif
+   else (нет)
+    |Диспетчер выбора|
+    :Заявки ждут в буфере,
+    continueDispatch=false;
+   endif
+   |Диспетчер выбора|
+  endwhile (нет)
+:Вернуться в обработку события;
+stop
+@enduml

@@ -1,0 +1,82 @@
+@startuml
+skinparam backgroundColor white
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam shadowing false
+skinparam ArrowColor #334155
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 95
+skinparam ParticipantBackgroundColor #E8F0FE
+skinparam ParticipantBorderColor #475569
+skinparam ClassBackgroundColor #EFF6FF
+skinparam ClassBorderColor #475569
+skinparam activityBackgroundColor #EFF6FF
+skinparam activityBorderColor #475569
+title Вариант 23 — Happy Flow: свободные буфер и принтер
+autonumber
+participant "Подразделение\nSource" as Src
+control "Модель\nSimulation" as Sim
+participant "Календарь\nEventCalendar" as Cal
+control "Диспетчер постановки\nAdmissionDispatcher" as Adm
+queue "Общий буфер\nBuffer" as Buf
+control "Диспетчер выбора\nSelectionDispatcher" as Sel
+control "Пакеты\nBatchManager" as BM
+participant "Пул принтеров\nPrinterPool" as Pool
+participant "Принтер j\nPrinter" as Pr
+participant "Статистика\nStatistics" as St
+
+note over Buf,Pr: До события: буфер пуст, пакета нет, принтеры свободны.
+Sim -> Cal: popNext()
+Cal --> Sim: ARRIVAL(2), t
+Sim -> Src: generate(t)
+Src --> Sim: job 2.1
+Sim -> St: onGenerated(job)
+Sim -> Src: nextArrival(t,H)
+Src --> Sim: ARRIVAL(t+Δt) или null; ИЗ1: Δt~Exp(λ₂)
+opt time ≤ H
+ Sim -> Cal: schedule(nextArrival)
+end
+Sim -> Adm: admit(job,t)
+Adm -> Buf: isFull()
+Buf --> Adm: false
+Adm -> Buf: append(job)
+Buf --> Adm: [2.1], WAITING; Д1ОЗ2
+Adm --> Sim: ACCEPTED
+Sim -> Sel: dispatch(t) — триггер: запись в буфер
+Sel -> Pool: findFreeByNumber()
+Pool --> Sel: принтер № 1 — Д2П1
+Sel -> BM: ensureActive(t)
+BM -> Buf: snapshotHighestPriority()
+Buf --> BM: источник 2, [2.1]
+BM -> BM: Создать пакет A, memberIds={2.1} — Д2Б5
+BM --> Sel: batch A
+Sel -> BM: nextPendingId()
+BM --> Sel: 2.1
+Sel -> Buf: removeById(2.1)
+Buf --> Sel: job 2.1; буфер []
+Sel -> Pr: start(job,t,A)
+Pr --> Sel: completionEvent(t+τ); ПЗ2: τ~U(a₁,b₁)
+Sel -> BM: onAssigned(2.1)
+Sel -> St: onStarted(job), W=0
+Sel -> Cal: schedule(completionEvent)
+ref over Sel,Pool: Следующие проверки dispatch — алгоритм sequence-batch
+Sel --> Sim: назначение выполнено
+... Прошло модельное время τ; предполагается отсутствие других событий ...
+Sim -> Cal: popNext()
+Cal --> Sim: SERVICE_COMPLETED(1,2.1), t+τ
+Sim -> Pool: get(1)
+Pool --> Sim: принтер № 1
+Sim -> Pr: complete(t+τ)
+Pr --> Sim: job 2.1 COMPLETED; принтер свободен
+Sim -> St: onCompleted(job), S=τ, L=τ
+Sim -> BM: onCompleted(2.1)
+BM --> Sim: пакет A закрыт
+Sim -> Sel: dispatch(t+τ) — триггер: завершение
+Sel -> Pool: findFreeByNumber()
+Pool --> Sel: принтер № 1
+Sel -> BM: ensureActive(t+τ)
+BM -> Buf: snapshotHighestPriority()
+Buf --> BM: пусто
+BM --> Sel: null
+Sel --> Sim: назначать нечего
+@enduml

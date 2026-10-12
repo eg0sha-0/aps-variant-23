@@ -1,0 +1,48 @@
+@startuml
+skinparam backgroundColor white
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam shadowing false
+skinparam ArrowColor #334155
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 95
+skinparam ParticipantBackgroundColor #E8F0FE
+skinparam ParticipantBorderColor #475569
+skinparam ClassBackgroundColor #EFF6FF
+skinparam ClassBorderColor #475569
+skinparam activityBackgroundColor #EFF6FF
+skinparam activityBorderColor #475569
+title Вариант 23 — переполнение: отказ новой заявке без выбивания
+autonumber
+participant "Источник 1\nБухгалтерия" as Src
+control Simulation as Sim
+participant EventCalendar as Cal
+control AdmissionDispatcher as Adm
+queue Buffer as Buf
+participant Statistics as St
+note over Sim,Buf: N=2, буфер [2.2,3.1], принтеры заняты. Приходит 1.1.
+Sim -> Cal: popNext()
+Cal --> Sim: ARRIVAL(1), t
+Sim -> Src: generate(t)
+Src --> Sim: job 1.1
+Sim -> St: onGenerated(job)
+Sim -> Src: nextArrival(t,H)
+Src --> Sim: следующее событие или null; ИЗ1: Δt~Exp(λ₁)
+opt Время следующего события ≤ H
+ Sim -> Cal: schedule(nextArrival)
+end
+Sim -> Adm: admit(job,t)
+Adm -> Buf: isFull()
+Buf --> Adm: true
+Adm -> Adm: job.state = REJECTED
+Adm -> St: onRejected(job)
+Adm --> Sim: REJECTED
+note over Adm,Buf
+Д1ОО5: отвергается вновь пришедшая заявка 1.1.
+Буфер остаётся [2.2,3.1], старые заявки не вытесняются.
+Приоритет источника 1 не изменяет дисциплину отказа.
+Диспетчер выбора не вызывается после отказа.
+end note
+Sim -> Sim: Журнал: генерация и отказ; обновление состояния ОД2
+note over Sim,St: G₁ и R₁ увеличены на 1; P₁=R₁/G₁. Принтеры сами отказов не создают.
+@enduml

@@ -1,0 +1,90 @@
+@startuml
+skinparam backgroundColor white
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam shadowing false
+skinparam ArrowColor #334155
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 95
+skinparam ParticipantBackgroundColor #E8F0FE
+skinparam ParticipantBorderColor #475569
+skinparam ClassBackgroundColor #EFF6FF
+skinparam ClassBorderColor #475569
+skinparam activityBackgroundColor #EFF6FF
+skinparam activityBorderColor #475569
+title Вариант 23 — обработка особых событий с дорожками
+|Модель и календарь|
+start
+:Проверить n,m,N, λᵢ, aⱼ,bⱼ,H,
+Создать пустой буфер, свободные принтеры,
+пакета нет, статистика обнулена;
+|Источники|
+:Для каждого источника запланировать первое
+поступление по ИЗ1: Δt~Exp(λᵢ), если time≤H;
+|Модель и календарь|
+while (Есть событие в календаре?) is (да)
+ :Извлечь ближайшее событие,
+ now = event.time,
+ при равенстве: завершение раньше поступления;
+ if (Тип события?) then (ARRIVAL)
+  |Источники|
+  :Создать PrintJob,
+  Спланировать следующее поступление,
+  если time≤H (независимо от отказа);
+  |Статистика и отображение|
+  :onGenerated(job);
+  |Диспетчер постановки|
+  :admit(job,now);
+  |Буфер|
+  if (Буфер заполнен?) then (да)
+   |Диспетчер постановки|
+   :Д1ОО5: REJECTED новой заявке,
+   ранее принятые не вытеснять;
+   |Статистика и отображение|
+   :onRejected(job);
+   |Модель и календарь|
+   :accepted=false;
+  else (нет)
+   |Буфер|
+   :Д1ОЗ2: append(job) в конец,
+   job=WAITING;
+   |Модель и календарь|
+   :accepted=true;
+  endif
+ else (SERVICE_COMPLETED)
+  |Принтеры|
+  :complete(now): job=COMPLETED,
+  принтер свободен;
+  |Статистика и отображение|
+  :onCompleted(job);
+  |Пакеты|
+  :onCompleted(job.id): удалить из inFlight;
+  if (pending и inFlight пусты?) then (да)
+   :Закрыть текущий пакет;
+  else (нет)
+   :Сохранить текущий пакет;
+  endif
+ endif
+ |Модель и календарь|
+ if (Успешная запись или завершение?) then (да)
+  |Диспетчер выбора|
+  :dispatch(now): назначить заявки текущего пакета,
+  подробный алгоритм — flowchart-dispatch;
+ else (отказ)
+  |Модель и календарь|
+  :Выбор не вызывается;
+ endif
+ |Статистика и отображение|
+ :Журнал действий и снимок ОД2:
+ источники, очередь, пакет, принтеры,
+ календарь, количество и процент отказов;
+ |Модель и календарь|
+endwhile (нет)
+:Все принятые задания дообслужены,
+T=max(H,lastCompletion);
+|Статистика и отображение|
+:ОР1: сводные таблицы источников,
+средние W,S,L, дисперсии W,S,
+загрузка принтеров за [0,T];
+stop
+@enduml

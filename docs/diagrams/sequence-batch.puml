@@ -1,0 +1,83 @@
+@startuml
+skinparam backgroundColor white
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam shadowing false
+skinparam ArrowColor #334155
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 95
+skinparam ParticipantBackgroundColor #E8F0FE
+skinparam ParticipantBorderColor #475569
+skinparam ClassBackgroundColor #EFF6FF
+skinparam ClassBorderColor #475569
+skinparam activityBackgroundColor #EFF6FF
+skinparam activityBorderColor #475569
+title Вариант 23 — фиксированный пакет, выборка и назначение на принтер
+autonumber
+control Simulation as Sim
+control SelectionDispatcher as Sel
+queue Buffer as Buf
+control BatchManager as BM
+participant PrinterPool as Pool
+participant Printer as Pr
+participant EventCalendar as Cal
+participant Statistics as St
+alt Триггер: SERVICE_COMPLETED
+ Sim -> Pool: get(printerId)
+ Pool --> Sim: printer
+ Sim -> Pr: complete(t)
+ Pr --> Sim: job COMPLETED; принтер свободен
+ Sim -> St: onCompleted(job)
+ Sim -> BM: onCompleted(job.id)
+ BM --> Sim: активный пакет или закрытие при pending=inFlight=∅
+else Триггер: успешная запись нового задания в буфер
+ note over Sim,Buf: AdmissionDispatcher уже выполнил append(job) по Д1ОЗ2.
+end
+Sim -> Sel: dispatch(t)
+Sel -> Sel: continueDispatch=true
+loop Пока continueDispatch=true
+ Sel -> Pool: findFreeByNumber()
+ Pool --> Sel: принтер с min(id) или null; Д2П1, поиск от № 1
+ alt Свободного принтера нет
+  Sel -> Sel: continueDispatch=false; все принтеры заняты; очередь сохранена
+ else Свободный принтер найден
+  Sel -> BM: ensureActive(t)
+  alt Пакет уже активен
+   BM --> Sel: прежний пакет с неизменными memberIds
+  else Пакета нет
+   BM -> Buf: snapshotHighestPriority()
+   Buf --> BM: min sourceId и список его ID в FIFO, либо пусто
+   alt Буфер пуст
+    BM --> Sel: null
+   else Есть задания
+    BM -> BM: Создать Batch; memberIds = снимок ID; pending = memberIds
+    BM --> Sel: новый пакет
+   end
+  end
+  alt Пакета нет
+   Sel -> Sel: continueDispatch=false; заданий нет
+  else Есть пакет
+   Sel -> BM: nextPendingId()
+   BM --> Sel: первый ID из pending или null
+   alt pending пуст, inFlight непуст
+    Sel -> Sel: continueDispatch=false; свободные принтеры простаивают до последнего завершения
+   else Есть ожидающий ID
+    Sel -> Buf: removeById(id)
+    Buf --> Sel: job; все элементы после удалённого сдвинуты
+    Sel -> Pr: start(job,t,batchId)
+    Pr --> Sel: completionEvent(t+τ), job PRINTING; ПЗ2: τ~U(aⱼ,bⱼ)
+    Sel -> BM: onAssigned(id): pending → inFlight
+    Sel -> St: onStarted(job): W=t−arrivalTime
+    Sel -> Cal: schedule(completionEvent)
+   end
+  end
+ end
+end
+Sel --> Sim: dispatch завершён
+note over Sel,BM
+Д2Б5: один пакет для всех принтеров, приоритет по min sourceId.
+Новые ID в memberIds не добавляются, даже от того же источника.
+Выбор внутри фиксированного пакета — FIFO.
+Следующий пакет только после последнего onCompleted текущего.
+end note
+@enduml

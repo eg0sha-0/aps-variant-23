@@ -1,0 +1,58 @@
+@startuml
+skinparam backgroundColor white
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam shadowing false
+skinparam ArrowColor #334155
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 95
+skinparam ParticipantBackgroundColor #E8F0FE
+skinparam ParticipantBorderColor #475569
+skinparam ClassBackgroundColor #EFF6FF
+skinparam ClassBorderColor #475569
+skinparam activityBackgroundColor #EFF6FF
+skinparam activityBorderColor #475569
+title Вариант 23 — формализованная схема системы печати
+left to right direction
+rectangle "ИБ, ИЗ1\nПодразделения компании" {
+ rectangle "И1 — бухгалтерия\nприоритет 1, λ₁" as S1
+ rectangle "И2 — отдел кадров\nприоритет 2, λ₂" as S2
+ rectangle "И3 — аналитический отдел\nприоритет 3, λ₃" as S3
+}
+rectangle "Диспетчер постановки\nAdmissionDispatcher\nД1ОЗ2 / Д1ОО5" as AD
+queue "Общий буфер на N мест\nFIFO при записи; сдвиг после выборки\n[заявка][заявка]...[заявка]" as B
+rectangle "Диспетчер выбора\nSelectionDispatcher\nД2Б5 — фиксированный пакет\nД2П1 — min свободный номер" as SD
+rectangle "Текущий пакет\nBatchManager\nmemberIds фиксированы\npending + inFlight" as BM
+rectangle "Приборы ПЗ2: время U(aⱼ,bⱼ)" {
+ rectangle "П1 — принтер № 1" as P1
+ rectangle "П2 — принтер № 2" as P2
+ rectangle "Пm — принтер № m" as PM
+}
+rectangle "Выход: выполненные задания" as Done
+rectangle "Выход: отказ новой заявке\nпри полном буфере, без вытеснения" as Reject
+rectangle "Simulation + EventCalendar\nARRIVAL / SERVICE_COMPLETED\nособые события и модельное время" as EC
+rectangle "Statistics + представления\nОР1: таблицы\nОД2: схема, состояния, календарь" as Stats
+S1 --> AD
+S2 --> AD
+S3 --> AD
+AD --> B : принято, запись в конец
+AD --> Reject : Д1ОО5
+B --> SD : выборка ID пакета; сдвиг
+SD ..> BM : формирование / назначение
+SD --> P1
+SD --> P2
+SD --> PM
+P1 --> Done
+P2 --> Done
+PM --> Done
+EC ..> AD : поступление
+EC ..> SD : запись принята / печать завершена
+EC ..> BM : отметить завершение
+EC ..> Stats : состояния и действия
+note bottom of BM
+Ожидающие члены пакета остаются в буфере.
+Все приборы обслуживают один пакет.
+Следующий — после полной обработки текущего.
+end note
+note bottom of SD: Номера источников и приборов задают приоритет.\nКольцевых указателей нет.
+@enduml

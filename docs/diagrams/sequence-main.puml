@@ -1,0 +1,109 @@
+@startuml
+skinparam backgroundColor white
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam shadowing false
+skinparam ArrowColor #334155
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 95
+skinparam ParticipantBackgroundColor #E8F0FE
+skinparam ParticipantBorderColor #475569
+skinparam ClassBackgroundColor #EFF6FF
+skinparam ClassBorderColor #475569
+skinparam activityBackgroundColor #EFF6FF
+skinparam activityBorderColor #475569
+title Вариант 23 — полный цикл заявки и обработка событий
+autonumber
+participant "Подразделение\nSource" as Src
+control "Модель\nSimulation" as Sim
+participant "Календарь\nEventCalendar" as Cal
+control "Диспетчер постановки\nAdmissionDispatcher" as Adm
+queue "Общий буфер\nBuffer" as Buf
+control "Диспетчер выбора\nSelectionDispatcher" as Sel
+control "Пакеты\nBatchManager" as BM
+participant "Пул принтеров\nPrinterPool" as Pool
+participant "Принтер j\nPrinter" as Pr
+participant "Статистика\nStatistics" as St
+
+note over Src,Cal
+ИБ, ИЗ1: независимые источники; Δt = −ln(U)/λᵢ, U∈(0,1).
+При инициализации запланировано первое ARRIVAL каждого источника до H.
+Календарь: время; при равенстве COMPLETED раньше ARRIVAL.
+end note
+loop Пока календарь не пуст (после H — дообслуживание)
+ Sim -> Cal: popNext()
+ Cal --> Sim: event(time, type, ownerId)
+ Sim -> Sim: now = event.time
+ alt ARRIVAL(sourceId)
+  Sim -> Src: generate(now)
+  Src --> Sim: job(id, sourceId, arrivalTime)
+  Sim -> St: onGenerated(job)
+  Sim -> Src: nextArrival(now, H)
+  Src --> Sim: следующее ARRIVAL или null, если time > H
+  opt Следующее поступление до H
+   Sim -> Cal: schedule(nextArrival)
+  end
+  Sim -> Adm: admit(job, now)
+  Adm -> Buf: isFull()
+  Buf --> Adm: full
+  alt Буфер заполнен
+   Adm -> Adm: job.state = REJECTED
+   Adm -> St: onRejected(job)
+   note over Adm,Buf: Д1ОО5: отказ только новой заявке; очередь и пакет не меняются.\n   Adm --> Sim: REJECTED
+  else Есть место
+   Adm -> Buf: append(job)
+   Buf --> Adm: job в конце очереди, WAITING
+   note over Adm,Buf: Д1ОЗ2: запись в порядке поступления.\n   Adm --> Sim: ACCEPTED
+  end
+ else SERVICE_COMPLETED(printerId, jobId)
+  Sim -> Pool: get(printerId)
+  Pool --> Sim: printer
+  Sim -> Pr: complete(now)
+  Pr --> Sim: job(COMPLETED); принтер свободен
+  Sim -> St: onCompleted(job)
+  Sim -> BM: onCompleted(job.id)
+  BM --> Sim: пакет сохранён или закрыт, если pending=inFlight=∅
+ end
+ opt Успешная запись ИЛИ завершение печати — триггер выбора
+  Sim -> Sel: dispatch(now)
+  Sel -> Sel: continueDispatch=true
+  loop Пока continueDispatch=true (не более m назначений)
+   Sel -> Pool: findFreeByNumber()
+   Pool --> Sel: printer с минимальным номером или null
+   alt Все принтеры заняты
+    note over Sel,Pool: Заявки остаются в буфере. Следующий выбор — после завершения печати.
+    Sel -> Sel: continueDispatch=false; назначение остановлено: принтеров нет
+   else Найден свободный принтер
+    Sel -> BM: ensureActive(now)
+    opt Активного пакета нет
+     BM -> Buf: snapshotHighestPriority()
+     Buf --> BM: sourceId и текущие ID в FIFO или пусто
+     BM -> BM: При непустом снимке зафиксировать memberIds
+    end
+    BM --> Sel: активный пакет или null
+    alt Пакета нет (буфер пуст)
+     Sel -> Sel: continueDispatch=false; заданий нет
+    else Пакет активен
+     Sel -> BM: nextPendingId()
+     BM --> Sel: jobId или null
+     alt pending пуст, inFlight непуст
+      note over Sel,Pr: Свободный принтер ждёт завершения текущего пакета; другой пакет не начинает.
+      Sel -> Sel: continueDispatch=false; ожидание границы пакета
+     else Есть ожидающая заявка пакета
+      Sel -> Buf: removeById(jobId)
+      Buf --> Sel: job; следующие элементы сдвинуты (Д1ОЗ2)
+      Sel -> Pr: start(job, now, batchId)
+      Pr --> Sel: completionEvent(now + τ), job=PRINTING
+      note over Sel,Pr: Д2Б5: фиксированный пакет минимального sourceId;\nД2П1: минимальный свободный printerId; ПЗ2: τ~U(aⱼ,bⱼ).\n      Sel -> BM: onAssigned(jobId)\n      Sel -> St: onStarted(job)\n      Sel -> Cal: schedule(completionEvent)
+     end
+    end
+   end
+  end
+  Sel --> Sim: dispatch завершён
+ end
+ Sim -> Sim: Записать действия события; снять состояние ОД2
+end
+Sim -> St: summary(T = max(H, lastCompletion))
+St --> Sim: Таблицы ОР1: отказы, времена, дисперсии, загрузка
+note over Sim,St: Happy Flow: свободные буфер и принтер → запись и назначение в один момент, W=0.
+@enduml
