@@ -4,3 +4,4 @@
 *.svg text eol=lf
 *.png binary
 *.docx binary
+*.bat text eol=crlf

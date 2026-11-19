@@ -1,5 +1,6 @@
 @startuml
-title Система печати — 8 основных классов, вариант 23
+!pragma layout smetana
+title Система печати — классы Java, вариант 23
 skinparam backgroundColor white
 skinparam defaultFontName Arial
 skinparam defaultFontSize 14
@@ -11,78 +12,86 @@ skinparam classAttributeIconSize 0
 hide empty members
 left to right direction
 class "Модель" as Simulation {
- - time: float
+ - config: Config
+ - time: double
  - sources: List<Source>
+ - printers: List<Printer>
+ - buffer: Buffer
+ - statistics: Statistics
  - admission: AdmissionDispatcher
  - selection: SelectionDispatcher
- - calendar: List<record>
- - printers: List<Printer>
- - statistics: Statistics
- + run(): void
- + step(): void
- + schedule(time: float, kind: string, ownerId: int): void
+ - calendar: PriorityQueue<Event>
+ - journal: List<JournalEntry>
+ ~ step(): boolean
+ ~ snapshot(): View
+ ~ journal(): List<JournalEntry>
+ - schedule(time, kind, ownerId, jobId): void
 }
 class "Источник" as Source {
  - id: int
- - lambda: float
+ - rate: double
+ - random: Random
  - serial: int
- + generate(t: float): PrintJob
- + nextArrival(t: float): float
+ ~ generate(time: double): PrintJob
+ ~ nextArrival(time: double): double
 }
 class "Диспетчер постановки" as AdmissionDispatcher {
  - buffer: Buffer
  - statistics: Statistics
- + admit(job: PrintJob, t: float): bool
+ ~ admit(job: PrintJob, actions: List<String>): boolean
 }
 class "Буфер" as Buffer {
  - capacity: int
  - queue: List<PrintJob>
- + isFull(): bool
- + append(job: PrintJob): void
- + snapshot(): List<PrintJob>
- + removeById(id: string): PrintJob
+ ~ isFull(): boolean
+ ~ append(job: PrintJob): void
+ ~ snapshot(): List<PrintJob.View>
+ ~ removeById(id: String): PrintJob
 }
 class "Диспетчер выбора" as SelectionDispatcher {
  - buffer: Buffer
  - printers: List<Printer>
- - statistics: Statistics
- - memberIds: List<string>
- - pendingIds: List<string>
- - inFlightIds: Set<string>
- + dispatch(t: float): List<record>
- + onCompleted(job: PrintJob): void
- - formBatch(): void
- - findFreePrinter(): Printer?
+ - memberIds: List<String>
+ - pendingIds: ArrayDeque<String>
+ - inFlightIds: Set<String>
+ ~ dispatch(time: double, actions: List<String>): List<Completion>
+ ~ onCompleted(job: PrintJob, actions: List<String>): void
+ ~ snapshot(): View
+ - formBatch(actions: List<String>): void
+ - findFreePrinter(): Printer
 }
 class "Принтер" as Printer {
  - id: int
- - a, b: float
- - currentJob: PrintJob?
- - completionTime: float?
- + isFree(): bool
- + start(job: PrintJob, t: float): float
- + complete(t: float): PrintJob
+ - minTime, maxTime: double
+ - random: Random
+ - currentJob: PrintJob
+ - completionTime: Double
+ ~ isFree(): boolean
+ ~ start(job: PrintJob, time: double, duration: Double): double
+ ~ complete(time: double, jobId: String): PrintJob
+ ~ view(): View
 }
 class "Заявка" as PrintJob {
- - id: string
+ - id: String
  - sourceId: int
- - state: string
- - arrivalTime: float
- - startedAt, completedAt: float?
- + markWaiting(): void
- + reject(): void
- + start(t: float): void
- + complete(t: float): void
+ - state: State
+ - arrivedAt: double
+ - startedAt, completedAt: Double
+ ~ markWaiting(): void
+ ~ reject(): void
+ ~ start(time: double): void
+ ~ complete(time: double): void
+ ~ view(): View
 }
 class "Статистика" as Statistics {
- - generated, rejected, completed: Map<int,int>
- - waitingTimes, serviceTimes: Map<int,List<float>>
- - busyTimes: Map<int,float>
- + onGenerated(job: PrintJob): void
- + onRejected(job: PrintJob): void
- + onStarted(job: PrintJob): void
- + onCompleted(job: PrintJob, printerId: int): void
- + summary(T: float): table
+ - generated, rejected, completed: long[]
+ - waits, services, totals: Moments[]
+ - busyTimes: double[]
+ ~ onGenerated(job: PrintJob): void
+ ~ onRejected(job: PrintJob): void
+ ~ onCompleted(job: PrintJob, printerId: int): void
+ ~ snapshot(): List<Row>
+ ~ busyTimes(): List<Double>
 }
 Simulation *-- Source
 Simulation *-- AdmissionDispatcher
@@ -90,22 +99,25 @@ Simulation *-- SelectionDispatcher
 AdmissionDispatcher --> Buffer : buffer
 AdmissionDispatcher --> Statistics : statistics
 SelectionDispatcher --> Buffer : buffer
-SelectionDispatcher --> Statistics : statistics
 SelectionDispatcher --> "1..m" Printer : printers
+Simulation --> Statistics : statistics
 Buffer o-- "0..N" PrintJob : queue
 Printer --> "0..1" PrintJob : currentJob
 Source ..> PrintJob : создаёт
-note bottom of Source: ИЗ1: интервалы Exp(lambda).
-note bottom of AdmissionDispatcher: Д1ОО5: отказ новой заявке, если буфер полон.
+Buffer -[hidden]down-> Statistics
+Statistics -[hidden]down-> Printer
+note bottom of Source: ИЗ1: интервалы Exp(rate).
+note bottom of AdmissionDispatcher: Д1ОО5: отказ новой заявке при полном буфере.
 note bottom of Buffer: Д1ОЗ2: запись в конец; после извлечения — сдвиг.
 note bottom of SelectionDispatcher
-Д2Б5: фиксируем ID заданий одного источника.
-Следующий пакет — после завершения текущего.
+Д2Б5: фиксированный состав пакета одного источника.
+Следующий пакет — после завершения всех заданий текущего.
 Д2П1: свободный принтер с минимальным номером.
 end note
-note bottom of Printer: ПЗ2: длительность печати U(a, b).
+note right of Printer: ПЗ2: длительность U(minTime, maxTime).
 legend bottom
-  - приватное поле или метод; + публичный метод; ? значение может отсутствовать.
-  List — список; Set — множество; Map — значения по номерам источников/принтеров.
+ - private; ~ доступ внутри пакета Java. Main — отдельный класс ввода и вывода.
+ View, Config, Row, Event — вложенные неизменяемые record-данные.
+ Показаны основные поля и методы; внутренние вспомогательные члены опущены.
 endlegend
 @enduml
