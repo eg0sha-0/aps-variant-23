@@ -1,5 +1,3 @@
-"""Дискретно-событийная модель печати, вариант 23."""
-
 from __future__ import annotations
 
 from collections import deque
@@ -11,7 +9,7 @@ from statistics import mean, variance
 from typing import Callable
 
 
-COMPLETED = 0  # При одинаковом времени завершение раньше поступления.
+COMPLETED = 0
 ARRIVAL = 1
 
 
@@ -57,10 +55,12 @@ class Source:
     rng: Random
     serial: int = 0
 
+    # Создаёт новую заявку с номером источника и временем поступления.
     def generate(self, now: float) -> PrintJob:
         self.serial += 1
         return PrintJob(f"{self.id}.{self.serial}", self.id, now)
 
+    # Рассчитывает время следующего поступления по экспоненциальному закону.
     def next_arrival(self, now: float) -> float:
         return now + self.rng.expovariate(self.rate)
 
@@ -90,6 +90,7 @@ class Printer:
     current_job: PrintJob | None = None
     completion_time: float | None = None
 
+    # Начинает печать и определяет время её окончания по равномерному закону.
     def start(self, job: PrintJob, now: float, duration: float | None = None) -> float:
         assert self.current_job is None
         if duration is None:
@@ -127,6 +128,7 @@ class Statistics:
         )
         self.busy_times[printer_id] += service
 
+    # Считает отказы, средние времена и дисперсии для итоговой таблицы.
     def summary(self, source: int | None = None) -> dict[str, int | float | None]:
         keys = tuple(self.generated) if source is None else (source,)
         generated = sum(self.generated[i] for i in keys)
@@ -149,6 +151,7 @@ class AdmissionDispatcher:
     def __init__(self, buffer: Buffer, statistics: Statistics) -> None:
         self.buffer, self.statistics = buffer, statistics
 
+    # Ставит новую заявку в конец буфера или отказывает, если буфер заполнен.
     def admit(self, job: PrintJob, actions: list[str]) -> bool:
         self.statistics.generated[job.source_id] += 1
         actions.append(f"Источник И{job.source_id} создал заявку {job.id}.")
@@ -175,15 +178,17 @@ class SelectionDispatcher:
         self.pending_ids: deque[str] = deque()
         self.in_flight_ids: set[str] = set()
 
+    # Отмечает выполненную заявку и закрывает пакет после завершения всех его заданий.
     def on_completed(self, job: PrintJob, actions: list[str]) -> None:
         self.in_flight_ids.remove(job.id)
         if not self.in_flight_ids and not self.pending_ids:
             actions.append("Весь пакет напечатан. Диспетчер выбора закрыл его.")
             self.member_ids = ()
 
+    # Фиксирует пакет по приоритету источника и назначает его заявки свободным принтерам.
     def dispatch(self, now: float, actions: list[str]) -> list[tuple[float, int, str]]:
         completions = []
-        # Список принтеров хранится в порядке номеров.
+
         while (printer := next((p for p in self.printers if p.current_job is None), None)):
             if not self.member_ids:
                 if not self.buffer.queue:
@@ -254,6 +259,7 @@ class Simulation:
                     raise ValueError("Поступление сценария вне горизонта или источник неизвестен.")
                 self.schedule(time, ARRIVAL, source_id)
 
+    # Добавляет событие в календарь с учётом времени и приоритета.
     def schedule(self, time: float, kind: int, owner_id: int, job_id: str | None = None) -> None:
         self._sequence += 1
         heappush(self.calendar, Event(time, kind, self._sequence, owner_id, job_id))
@@ -263,6 +269,7 @@ class Simulation:
         if time <= self.config.horizon:
             self.schedule(time, ARRIVAL, source.id)
 
+    # Обрабатывает ближайшее событие и все вызванные им действия системы.
     def step(self) -> tuple[Event, list[str]] | None:
         if not self.calendar:
             assert not self.buffer.queue and not self.selection.member_ids
@@ -299,7 +306,6 @@ class Simulation:
 
 
 def demo() -> Simulation:
-    """Ручной сценарий из объяснения, пригодный для повторения на защите."""
     durations = {"1.1": 4, "2.1": 2, "2.2": 5, "2.3": 2, "3.1": 2}
     return Simulation(
         Config(horizon=5),

@@ -1,5 +1,3 @@
-"""Пошаговое отображение ОД2 в консоли."""
-
 from __future__ import annotations
 
 import argparse
@@ -37,6 +35,7 @@ def event_name(event: Event) -> str:
     return f"Окончание печати {event.job_id} на П{event.owner_id}"
 
 
+# Показывает очередь, пакет, принтеры, статистику и календарь после шага.
 def show_state(sim: Simulation, result: tuple[Event, list[str]] | None = None) -> None:
     selection = sim.selection
     queue = [job.id for job in sim.buffer.queue]
@@ -89,6 +88,7 @@ def show_state(sim: Simulation, result: tuple[Event, list[str]] | None = None) -
         print("  Нет будущих событий.")
 
 
+# Выводит итоговые показатели системы и загрузку принтеров.
 def show_summary(sim: Simulation) -> None:
     print(f"\nМоделирование завершено. Горизонт поступлений: {fmt(sim.config.horizon)} мин."
           f" Интервал наблюдения: {fmt(sim.observation_time)} мин.")
@@ -119,6 +119,7 @@ def parse_bounds(value: str) -> tuple[float, float]:
     return a, b
 
 
+# Читает параметры запуска и переключает события по нажатию Enter.
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Пошаговая модель системы печати, вариант 23")
     parser.add_argument("--demo", action="store_true", help="готовый сценарий для защиты")
