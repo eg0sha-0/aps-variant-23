@@ -21,7 +21,7 @@ class Config:
     service: tuple[tuple[float, float], ...] = ((2, 5), (2, 5))
     capacity: int = 3
     horizon: float = 12
-    seed: int = 23
+    seed: int | None = None
 
     def __post_init__(self) -> None:
         if not self.rates or any(not isfinite(r) or r <= 0 for r in self.rates):

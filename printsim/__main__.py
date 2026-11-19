@@ -128,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="интервалы печати в минутах, один интервал на принтер")
     parser.add_argument("--buffer", type=int, help="вместимость буфера")
     parser.add_argument("--horizon", type=float, help="момент прекращения поступлений, мин")
-    parser.add_argument("--seed", type=int, help="число для повторения случайного запуска")
+    parser.add_argument("--seed", type=int, help="число для повторения запуска; без параметра каждый запуск новый")
     args = parser.parse_args(argv)
     options = {k: v for k, v in vars(args).items()
                if k not in {"demo", "no_pause"} and v is not None}
@@ -150,7 +150,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.demo:
         print("Учебный сценарий: времена заранее заданы, чтобы повторить пример на защите.")
     else:
-        print(f"Случайный запуск: seed={sim.config.seed}, горизонт {sim.config.horizon:g} мин.")
+        seed_info = f"seed={sim.config.seed}" if sim.config.seed is not None else "новые случайные значения"
+        print(f"Случайный запуск: {seed_info}, горизонт {sim.config.horizon:g} мин.")
     print("Источники (в порядке приоритета):")
     for source in sim.sources:
         name = DEPARTMENTS[source.id - 1] if source.id <= len(DEPARTMENTS) else f"Подразделение {source.id}"
