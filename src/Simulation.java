@@ -56,16 +56,30 @@ final class Simulation {
     private final PriorityQueue<Event> calendar = new PriorityQueue<>();
     private final List<JournalEntry> journal = new ArrayList<>();
     private final boolean scripted;
+    private final int arrivalLimit;
+    private int arrivalsProcessed;
+    private double lastArrival;
     private double time;
     private int step;
     private long sequence;
     private List<String> lastActions = List.of();
     private EventView lastEvent;
 
-    Simulation(Config config) { this(config, null, Map.of()); }
+    Simulation(Config config) { this(config, null, Map.of(), 0); }
+
+    Simulation(Config config, int arrivalLimit) {
+        this(config, null, Map.of(), arrivalLimit);
+        if (arrivalLimit < 1) throw new IllegalArgumentException("Нужен положительный объём выборки.");
+    }
 
     Simulation(Config config, List<Arrival> arrivals, Map<String, Double> durations) {
+        this(config, arrivals, durations, 0);
+    }
+
+    private Simulation(Config config, List<Arrival> arrivals, Map<String, Double> durations,
+                       int arrivalLimit) {
         this.config = config;
+        this.arrivalLimit = arrivalLimit;
         scripted = arrivals != null;
         Random random = new Random(config.seed());
         for (int i = 0; i < config.rates().size(); i++)
@@ -97,7 +111,8 @@ final class Simulation {
 
     private void scheduleArrival(Source source) {
         double next = source.nextArrival(time);
-        if (next <= config.horizon()) schedule(next, Kind.ARRIVAL, source.id(), null);
+        if (arrivalLimit > 0 || next <= config.horizon())
+            schedule(next, Kind.ARRIVAL, source.id(), null);
     }
 
     // Один шаг обрабатывает ближайшее событие и его последствия в тот же момент времени.
@@ -115,8 +130,14 @@ final class Simulation {
         boolean dispatch;
         if (e.kind() == Kind.ARRIVAL) {
             Source source = sources.get(e.ownerId() - 1);
+            lastArrival = time;
+            arrivalsProcessed++;
             dispatch = admission.admit(source.generate(time), actions);
-            if (!scripted) scheduleArrival(source);
+            if (arrivalLimit > 0 && arrivalsProcessed == arrivalLimit) {
+                calendar.removeIf(event -> event.kind() == Kind.ARRIVAL);
+            } else if (!scripted) {
+                scheduleArrival(source);
+            }
         } else {
             Printer printer = printers.get(e.ownerId() - 1);
             PrintJob job = printer.complete(time, e.jobId());
@@ -129,8 +150,10 @@ final class Simulation {
             for (SelectionDispatcher.Completion completion : selection.dispatch(time, actions))
                 schedule(completion.time(), Kind.COMPLETED, completion.printerId(), completion.jobId());
         }
-        lastActions = List.copyOf(actions);
-        for (String action : actions) journal.add(new JournalEntry(step, time, action));
+        if (arrivalLimit == 0) {
+            lastActions = List.copyOf(actions);
+            for (String action : actions) journal.add(new JournalEntry(step, time, action));
+        }
         return true;
     }
 
@@ -146,5 +169,6 @@ final class Simulation {
     EventView lastEvent() { return lastEvent; }
     List<String> lastActions() { return lastActions; }
     List<JournalEntry> journal() { return List.copyOf(journal); }
-    double observationTime() { return Math.max(config.horizon(), time); }
+    double observationTime() { return arrivalLimit > 0 ? time : Math.max(config.horizon(), time); }
+    double generationEnd() { return arrivalLimit > 0 ? lastArrival : config.horizon(); }
 }

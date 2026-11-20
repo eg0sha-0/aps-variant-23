@@ -16,14 +16,24 @@ public final class Main {
         try {
             boolean defaults = Arrays.asList(args).contains("--defaults");
             boolean noPause = Arrays.asList(args).contains("--no-pause");
+            boolean automaticFlag = Arrays.asList(args).contains("--auto");
             for (String arg : args)
-                if (!arg.equals("--defaults") && !arg.equals("--no-pause"))
-                    throw new IllegalArgumentException("Допустимы --defaults и --no-pause.");
-            System.out.println("Ковальчук Егор. Система печати — вариант 23. Пошаговый режим ОД2.");
+                if (!arg.equals("--defaults") && !arg.equals("--no-pause") && !arg.equals("--auto"))
+                    throw new IllegalArgumentException("Допустимы --defaults, --no-pause и --auto.");
+            System.out.println("Ковальчук Егор. Система печати — вариант 23.");
             System.out.println("Поступления Exp(λ), печать U(a,b); время в минутах.");
+            boolean automatic = automaticFlag || (!defaults && !noPause
+                    && readInt(input, "Режим (1 — пошаговый ОД2, 2 — автоматический ОР1)", 1, 1, 2) == 2);
             Simulation.Config config = defaults
-                    ? Simulation.Config.defaults(new Random().nextLong()) : readConfig(input);
-            run(new Simulation(config), input, noPause);
+                    ? Simulation.Config.defaults(new Random().nextLong()) : readConfig(input, automatic);
+            if (automatic) {
+                int limit = defaults ? AutomaticRun.DEFAULT_LIMIT : readInt(input,
+                        "Лимит заявок на один прогон", AutomaticRun.DEFAULT_LIMIT,
+                        AutomaticRun.INITIAL_SAMPLE, 1_000_000);
+                runAutomatic(config, limit);
+            } else {
+                run(new Simulation(config), input, noPause);
+            }
         } catch (IllegalArgumentException ex) {
             System.err.println("Ошибка: " + ex.getMessage());
             System.exit(1);
@@ -33,7 +43,7 @@ public final class Main {
     }
 
     // Запрашивает параметры; Enter оставляет показанное значение по умолчанию.
-    private static Simulation.Config readConfig(Scanner input) {
+    private static Simulation.Config readConfig(Scanner input, boolean automatic) {
         System.out.println("Настройка: Enter — значение в скобках.");
         int sourceCount = readInt(input, "Число подразделений", 3, 1, 100);
         int printerCount = readInt(input, "Число принтеров", 2, 1, 100);
@@ -50,7 +60,7 @@ public final class Main {
                     Math.max(5, min + 1), min, Double.MAX_VALUE);
             bounds.add(new Simulation.Bounds(min, max));
         }
-        double horizon = readDouble(input, "Горизонт поступлений", 12, 0, 1000000);
+        double horizon = automatic ? 12 : readDouble(input, "Горизонт поступлений", 12, 0, 1000000);
         long seed;
         while (true) {
             System.out.print("Seed [Enter — новый случайный запуск]: ");
@@ -173,11 +183,26 @@ public final class Main {
                 .map(e -> List.of(f(e.time()), eventName(e))).toList());
     }
 
-    // Итог одного прогона не является автоматическим подбором объёма выборки.
+    private static void runAutomatic(Simulation.Config config, int limit) {
+        System.out.println("\nОР1. Подбор выборки для общей доли отказов. Seed: " + config.seed());
+        System.out.println("Цель по методичке: относительная точность 10%, доверительная вероятность 0,9.");
+        List<List<String>> rows = new ArrayList<>();
+        AutomaticRun.Result result = AutomaticRun.run(config, limit, trial ->
+                rows.add(List.of("" + trial.generated(), pct(trial.loss()),
+                        trial.required() == Long.MAX_VALUE ? "—" : "" + trial.required(), pct(trial.change()))));
+        table(List.of("Заявок", "% отказа", "Нужно по формуле", "Изменение оценки"), rows);
+        if (result.trial().reached()) {
+            System.out.println("Критерий методички выполнен для общей доли отказов.");
+        } else {
+            System.out.println("Достигнут лимит. Заданная точность общей доли отказов не подтверждена.");
+        }
+        showSummary(result.simulation());
+    }
+
     private static void showSummary(Simulation sim) {
         Simulation.View v = sim.snapshot();
-        System.out.println("\nВсе принятые заявки дообслужены. Горизонт поступлений: "
-                + f(sim.config().horizon()) + "; время наблюдения: " + f(sim.observationTime()) + " мин.");
+        System.out.println("\nВсе принятые заявки дообслужены. Конец поступлений: "
+                + f(sim.generationEnd()) + "; время наблюдения: " + f(sim.observationTime()) + " мин.");
         List<List<String>> rows = new ArrayList<>();
         for (Statistics.Row s : v.statistics())
             rows.add(List.of(s.sourceId() == 0 ? "Всего" : "И" + s.sourceId(), "" + s.generated(),

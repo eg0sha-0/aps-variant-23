@@ -174,6 +174,7 @@ public final class ModelCheck {
     }
 
     public static void main(String[] args) {
+        automaticMode();
         fixedScenario();
         equalTimes();
         pendingFifo();
@@ -194,5 +195,23 @@ public final class ModelCheck {
         Simulation.Config cfg = Simulation.Config.defaults(23);
         check(stress(cfg).equals(stress(cfg)), "Seed не воспроизводит прогон");
         System.out.println("OK: сценарии, инкапсуляция, неизменяемые снимки, 400 конфигураций; событий: " + checkedEvents);
+    }
+
+    private static void automaticMode() {
+        Simulation.Config cfg = Simulation.Config.defaults(23);
+        List<AutomaticRun.Trial> trials = new ArrayList<>();
+        AutomaticRun.Result result = AutomaticRun.run(cfg, 2000, trials::add);
+        check(trials.get(0).generated() == 100 && result.trial().reached(), "Подбор выборки");
+        Statistics.Row total = result.simulation().snapshot().statistics().get(0);
+        check(total.generated() == result.trial().generated()
+                && total.generated() == total.rejected() + total.completed(), "Баланс ОР1");
+        check(result.simulation().generationEnd() > cfg.horizon()
+                && result.simulation().journal().isEmpty(), "ОР1 ограничен числом заявок и не хранит журнал");
+
+        Simulation.Config light = new Simulation.Config(List.of(0.01),
+                List.of(new Simulation.Bounds(0.001, 0.002)), 10, 1, 23);
+        AutomaticRun.Result capped = AutomaticRun.run(light, 350, trial -> { });
+        check(capped.trial().generated() == 350 && capped.trial().loss() == 0
+                && !capped.trial().reached(), "Ноль отказов не подтверждает относительную точность");
     }
 }
